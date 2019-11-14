@@ -10,7 +10,7 @@ void dump(const unsigned char* buf, int len) {
 	for (int i = 0; i < len; i++) {
 		if (i % 16 == 0)
 			printf("\n");
-		printf("%02X ", buf[i]);
+		printf("%c", buf[i]);
     }
     printf("\n");
 }
@@ -20,7 +20,7 @@ bool check_host(int len, const unsigned char* payload, unordered_set<string> &fi
     int ip_len = (payload[0] & 0x0F) << 2;
     int tcp_len = (payload[ip_len + 12] & 0xF0) >> 2;
     int offset = ip_len + tcp_len;
-    
+
     if(isHTTP(payload+offset)) {
         string host = extract_host(payload+offset);
         LOG(INFO) << "Current host : " << host;
@@ -45,10 +45,12 @@ string extract_host(const unsigned char* http_field) {
     int idx = 0;
     while(true) {
         if(!memcmp(http_field+idx, "Host: ", 6)) {
+            idx += 6;
             for(int i=0;memcmp(http_field+idx+i, "\x0d\x0a", 2);++i)
                 ret += http_field[idx+i];
             break;
         }
+        ++idx;
     }
     return ret;
 }

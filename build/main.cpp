@@ -25,16 +25,27 @@ void read_file(const char* filename) {
 }
 
 static u_int32_t print_pkt(struct nfq_data* tb, bool* flag) {
-    int id = 0, ret = 0;
-    unsigned char* data;
+    int id = 0;
+	struct nfqnl_msg_packet_hdr *ph;
+	struct nfqnl_msg_packet_hw *hwph;
+	u_int32_t mark,ifi; 
+	int ret;
+	unsigned char *data;
 
-    struct nfqnl_msg_packet_hdr* ph;
-    ph = nfq_get_msg_packet_hdr(tb);
-    if(ph) id = ntohl(ph->packet_id);
+	ph = nfq_get_msg_packet_hdr(tb);
+	if (ph) {
+		id = ntohl(ph->packet_id);
+	}
+	hwph = nfq_get_packet_hw(tb);
+	if (hwph) {
+		int i, hlen = ntohs(hwph->hw_addrlen);
+	}
+	mark = nfq_get_nfmark(tb);
+	ifi = nfq_get_indev(tb);
+	ifi = nfq_get_outdev(tb);
+	ifi = nfq_get_physindev(tb);
+	ifi = nfq_get_physoutdev(tb);
     ret = nfq_get_payload(tb, &data);
-
-    LOG(INFO) << "Packet size : " << ret;
-    dump(data, ret);
 
     *flag = check_host(ret, (const unsigned char*)data, filter);
     return id;
@@ -43,8 +54,13 @@ static u_int32_t print_pkt(struct nfq_data* tb, bool* flag) {
 static int cb(struct nfq_q_handle* qh, struct nfgenmsg* nfmsg, struct nfq_data* nfa, void* data) {
     bool flag = false;
     int id = print_pkt(nfa, &flag);
-    if(flag) return nfq_set_verdict(qh, id, NF_DROP, 0, 0);  // How to alternate NULL in C++ ?
-    else return nfq_set_verdict(qh, id, NF_ACCEPT, 0, 0);
+    if(flag) {
+        LOG(INFO) << "Droping packet";
+        return nfq_set_verdict(qh, id, NF_DROP, 0, 0);  // How to alternate NULL in C++ ?
+    }
+    else {
+        return nfq_set_verdict(qh, id, NF_ACCEPT, 0, 0);
+    }
 }
 
 int main(int argc, char* argv[]) {
