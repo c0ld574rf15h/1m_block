@@ -1,5 +1,9 @@
 #include <cstdlib>
+#include <cstring>
 #include <unistd.h>
+#include <errno.h>
+#include <unordered_set>
+#include <fstream>
 #include <netinet/in.h>
 #include <linux/types.h>
 #include <linux/netfilter.h>
@@ -8,21 +12,39 @@
 #include "utils.h"
 using namespace std;
 
-static u_int32_t print_pkt(struct nfq_data* tb) {
+char hostname[HOST_NAME_SZ];
+unordered_set<string> filter;
+
+void read_file(const char* filename) {
+    string host;
+    ifstream in(filename);
+    while(getline(in, host))
+        filter.insert(host);
+    LOG(INFO) << "Read " << filter.size() << " domains from file " << filename;
+    in.close();
+}
+
+static u_int32_t print_pkt(struct nfq_data* tb, bool* flag) {
     int id = 0, ret = 0;
     unsigned char* data;
 
     struct nfqnl_msg_packet_hdr* ph;
     ph = nfq_get_msg_packet_hdr(tb);
     if(ph) id = ntohl(ph->packet_id);
-
     ret = nfq_get_payload(tb, &data);
+
+    LOG(INFO) << "Packet size : " << ret;
+    dump(data, ret);
+
+    *flag = check_host(ret, (const unsigned char*)data, filter);
     return id;
 }
 
 static int cb(struct nfq_q_handle* qh, struct nfgenmsg* nfmsg, struct nfq_data* nfa, void* data) {
-    int id = print_pkt(nfa);
-    return nfq_set_verdict(qh, id, NF_ACCEPT, 0, 0);  // How to alternate NULL in C++ ?
+    bool flag = false;
+    int id = print_pkt(nfa, &flag);
+    if(flag) return nfq_set_verdict(qh, id, NF_DROP, 0, 0);  // How to alternate NULL in C++ ?
+    else return nfq_set_verdict(qh, id, NF_ACCEPT, 0, 0);
 }
 
 int main(int argc, char* argv[]) {
@@ -34,14 +56,16 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    read_file((const char*) argv[1]);
+
     struct nfq_handle* h = nfq_open();
     if(!h) {
         LOG(ERROR) << "Error during nfq_open()";
-        return -1;
+        exit(1);
     }
     if(nfq_unbind_pf(h, AF_INET) < 0) {
         LOG(ERROR) << "Error during nfq_unbind_pf()";
-        return -1;
+        exit(1);
     }
 
     struct nfq_q_handle* qh = nfq_create_queue(h, 0, &cb, NULL);
@@ -58,7 +82,7 @@ int main(int argc, char* argv[]) {
     char buf[BUF_SIZE] __attribute__ ((aligned));
     while(true) {
         if((rv = recv(fd, buf, sizeof(buf), 0)) >= 0){
-            LOG(INFO) << "Packet received";
+            // LOG(INFO) << "Packet received";
             nfq_handle_packet(h, buf, rv);
             continue;
         }
